@@ -126,6 +126,66 @@ void printLines(const string[] options, size_t highlight){
 // TUI ENDS
 
 // BST BEGINS
+struct Node{
+  long val;
+  long[] topScores;
+  Node* left, right;
+  this(long val){
+    this.val = val;
+  }
+  void add(long nval){
+    if(nval > val){
+      //right
+      if(right){
+        (*right).add(nval);
+      }
+      else{
+        right = new Node(nval);
+      }
+
+    }
+    else{
+      //left
+      if(left){
+        (*left).add(nval);
+      }
+      else{
+        left = new Node(nval);
+      }
+    }
+  }
+
+  void updateTopScores(){
+    if(left){
+      (*left).updateTopScores();
+      foreach(i;(*left).topScores){
+        topScores ~= i;
+      }
+    }
+    topScores ~= val;
+    if(right){
+      (*right).updateTopScores();
+      foreach(i;(*right).topScores){
+        topScores ~= i;
+      }
+    }
+  }
+
+  Node* pruneLast(){
+    if(right){
+      right = (*right).pruneLast();
+      return &this;
+    }
+    else{
+      if(left){
+        return left;
+      }
+      else return null;
+    }
+  }
+
+
+}
 
 // BST ENDS
 
@@ -158,9 +218,14 @@ int main(){
   readAllowedFiles(nolook);
   writeln(nolook.length);
   auto sp = Spider("/home/somi/programs");
-  auto a = "Floccinaucinihilipilification";
-  auto b = "Antidisestablishmentarianism";
-  writeln(score(a,b));
+  Node root = Node(0);
+  foreach(i;1..100){
+    root.add(i);
+  }
+  root.pruneLast();
+  root.updateTopScores();
+  writeln(root.topScores);
+
   return 0;
 
 }
