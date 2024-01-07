@@ -1,24 +1,25 @@
-import std.stdio:writeln, writef, File;
+import std.stdio:writeln, writef, File, getchar;
 import std.string:leftJustify, splitLines;
 import std.file:dirEntries, SpanMode, read, DirEntry;
 import std.array: split;
 import core.stdc.stdlib:exit;
-import std.algorithm: min;
+import std.algorithm: min, max;
 import std.parallelism:parallel;
-import std.datetime.stopwatch: StopWatch, AutoStart, Duration;
+import std.concurrency:spawn;
+import core.sys.posix.termios;
 
-const int MAX = 50;
+const int MAXCHAR = 30;
 long score(const string src, const string dest){
-  long[] mem = new long[MAX*MAX];
-  bool[] vis = new bool[MAX*MAX];
+  long[MAXCHAR*MAXCHAR] mem;
+  bool[MAXCHAR*MAXCHAR] vis;
 
   long editDist(long idx1, long idx2){
     if(idx1 < 0) return idx2+1;
     if(idx2 < 0) return idx1+1;
-    if(vis[idx1*MAX+idx2]) return mem[idx1*MAX+idx2];
+    if(vis[idx1*MAXCHAR+idx2]) return mem[idx1*MAXCHAR+idx2];
     // weighted edit distance
-    vis[idx1*MAX+idx2] = true;
-    return mem[idx1*MAX+idx2] = min(
+    vis[idx1*MAXCHAR+idx2] = true;
+    return mem[idx1*MAXCHAR+idx2] = min(
       editDist(idx1-1,idx2-1)+ cast(long)(src[idx1] != dest[idx2]),
       editDist(idx1-1,idx2) + 1,
       editDist(idx1,idx2-1) + 1,
@@ -28,6 +29,8 @@ long score(const string src, const string dest){
   return editDist(length,length); // just long enough to match the source
 }
 
+const int MAXFILES = 65535;
+
 enum Type{
   ALL, SKIPPABLE
 }
@@ -35,6 +38,7 @@ enum Type{
 struct FileInfo{
   DirEntry dirInfo;
   string name;
+  string absoluteLoc;
   long score = 0;
 }
 
@@ -50,7 +54,7 @@ struct Spider{
       case Type.ALL:
         foreach(file ; dirEntries(currDir,SpanMode.shallow,false)){
           auto temp = cast(string)(file.name.split('/')[$-1]);
-          FileInfo Struct = {dirInfo : file, name : temp};
+          FileInfo Struct = {dirInfo : file, name : temp, absoluteLoc:file.name};
           list ~= Struct;
         }
         break;
@@ -59,7 +63,7 @@ struct Spider{
           auto temp = cast(string)(file.name.split('/')[$-1]);
           if(!(temp in nolook))
           {
-            FileInfo Struct = {dirInfo : file, name : temp};
+            FileInfo Struct = {dirInfo : file, name: temp, absoluteLoc:file.name};
             list ~= Struct;
           }
         }
@@ -113,16 +117,24 @@ size_t getCols(){
   return cols;
 }
 
-void printLines(const string[] options, size_t highlight){
-  writef("\x1b[%uF",OPTIONS);
+void printLines(shared string[] options, const string header, size_t highlight){
+  writef("\x1b[%uF\x1b[0J",OPTIONS+1);
+  writeln(header);
   assert(options.length == OPTIONS);
+  size_t maxLen = 0;
+  foreach(x;options)
+    maxLen = max(maxLen, x.length);
+  maxLen = min(maxLen,getCols()-3);
   foreach(i,val;options){
+    auto temp = min(val.length,maxLen);
     if(i != highlight)
-      writeln(val);
+      writeln(val[$-temp..$]);
     else
-      writeln("\x1b[30;107m",leftJustify(val,20,' '),"\x1b[0m");
+      writeln("\x1b[30;107m",leftJustify(val[$-temp..$],maxLen+2,' '),"\x1b[0m");
   }
 }
+
+
 
 // TUI ENDS
 
@@ -206,42 +218,105 @@ void readAllowedFiles(ref bool[string] nolook) {
 
 }
 
+shared string[OPTIONS] results;
+
+shared string toFind = "hello";
+shared bool change = false;
+
+shared FileInfo[] sharedAllFiles;
+void find(){
+  while(true){
+    while(!change){}
+    foreach(ref x;parallel(sharedAllFiles))
+      x.score = score(toFind, x.name);
+    Node root = Node(-1, "");
+    foreach(x;sharedAllFiles){
+      root.add(x.score, x.absoluteLoc);
+      if(root.size > OPTIONS)
+        root.pruneLast();
+    }
+    root.updateTopScores();
+    foreach(i,r;root.topScores[1..$]){
+      results[i] = r;
+    }
+    change = false;
+  }
+  return;
+}
+  
 
 int main(){
-  writeln("Number of cols : ",getCols());
   clean();
   readAllowedFiles(nolook);
   auto sp = Spider("/home");
   FileInfo[] allFiles;
 
-  auto sw = StopWatch(AutoStart.no);
-
-
-  sw.start();
+  /* sw.start(); */
   foreach(x;(sp))
     allFiles ~= x;
+  
+  sharedAllFiles = new FileInfo[allFiles.length];
+  foreach(x;0..allFiles.length)
+    sharedAllFiles[x] = cast(shared(FileInfo))allFiles[x];
 
-  Duration readtime = sw.peek();
-  string toFind = "trash";
-  foreach(ref x;(allFiles))
-    x.score = score(toFind, x.name);
 
-  Duration scoretime = sw.peek();
+  /* Duration readtime = sw.peek(); */
+  /* string toFind = "new-trash"; */
 
-  Node root = Node(-1, "");
-  foreach(x;allFiles){
-    root.add(x.score, x.dirInfo.name);
-    if(root.size > OPTIONS)
-      root.pruneLast();
+  /* Duration scoretime = sw.peek(); */
+
+  /* Duration sorttime = sw.peek(); */
+  /* sw.stop(); */
+  /* writeln("Total time :",sw.peek()); */
+  /* writeln("Reading time :",readtime); */
+  /* writeln("Scoring time :",scoretime-readtime); */
+  /* writeln("Sorting time :",sorttime-scoretime); */
+  // Save current terminal settings
+  termios term, oldTerm;
+
+  tcgetattr(0, &term);
+  oldTerm = term;
+  term.c_lflag &= ~ICANON;
+  term.c_cc[VMIN] = 1;
+  term.c_cc[VTIME] = 0;
+  tcsetattr(0, TCSANOW, &term);
+
+  spawn(&find);
+  char[] keyboardInput;
+  int highlight = 0;
+  int strLen = 0;
+  toFind = "";
+  while(true){
+    printLines(results, toFind,highlight);
+    int c = getchar();
+    if(c == 127){
+      if(strLen > 0){
+        toFind = cast(string)keyboardInput;
+        change = true;
+        keyboardInput[strLen-1] = 0;
+        strLen--;
+      }
+    }
+    else if(c == 9){
+      highlight++;
+      highlight%=OPTIONS;
+    }
+    else if(c == 10){
+      tcsetattr(0, TCSANOW, &oldTerm);
+      writeln("@:",results[highlight]);
+      exit(0);
+    }
+    else{
+      if(strLen < keyboardInput.length)
+        keyboardInput[strLen] = cast(char)c;
+      else
+        keyboardInput ~= cast(char)c;
+      strLen++;
+      toFind = cast(string)keyboardInput;
+      change = true;
+    }
+
   }
-  root.updateTopScores();
-  Duration sorttime = sw.peek();
-  sw.stop();
-  writeln(root.topScores);
-  writeln("Total time :",sw.peek());
-  writeln("Reading time :",readtime);
-  writeln("Scoring time :",scoretime-readtime);
-  writeln("Sorting time :",sorttime-scoretime);
 
 
   return 0;
