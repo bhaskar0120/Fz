@@ -4,6 +4,8 @@ import std.file:dirEntries, SpanMode, read, DirEntry;
 import std.array: split;
 import core.stdc.stdlib:exit;
 import std.algorithm: min;
+import std.parallelism:parallel;
+import std.datetime.stopwatch: StopWatch, AutoStart, Duration;
 
 const int MAX = 50;
 long score(const string src, const string dest){
@@ -22,7 +24,8 @@ long score(const string src, const string dest){
       editDist(idx1,idx2-1) + 1,
       );
   }
-  return editDist(src.length-1,dest.length-1);
+  long length = min(src.length-1,dest.length-1);
+  return editDist(length,length); // just long enough to match the source
 }
 
 enum Type{
@@ -32,6 +35,7 @@ enum Type{
 struct FileInfo{
   DirEntry dirInfo;
   string name;
+  long score = 0;
 }
 
 bool[string] nolook;
@@ -53,7 +57,6 @@ struct Spider{
       case Type.SKIPPABLE:
         foreach(file ; dirEntries(currDir,SpanMode.shallow,false)){
           auto temp = cast(string)(file.name.split('/')[$-1]);
-          writeln(temp);
           if(!(temp in nolook))
           {
             FileInfo Struct = {dirInfo : file, name : temp};
@@ -76,15 +79,13 @@ struct Spider{
       type = Type.ALL;
     add();
 
-    foreach(x;this.list)
-      writeln(x);
   }
 
   bool empty(){
     return pos >= list.length;
   }
-  string front(){
-    return list[pos].name;
+  FileInfo front(){
+    return list[pos];
   }
   void popFront(){
     if(list[pos].dirInfo.isDir){
@@ -128,29 +129,33 @@ void printLines(const string[] options, size_t highlight){
 // BST BEGINS
 struct Node{
   long val;
-  long[] topScores;
+  int size = 0;
+  string[] topScores;
+  string loc = "";
   Node* left, right;
-  this(long val){
+  this(long val, string loc ){
     this.val = val;
+    this.loc = loc;
   }
-  void add(long nval){
+  void add(long nval, string nloc){
+    size++;
     if(nval > val){
       //right
       if(right){
-        (*right).add(nval);
+        (*right).add(nval,nloc);
       }
       else{
-        right = new Node(nval);
+        right = new Node(nval,nloc);
       }
 
     }
     else{
       //left
       if(left){
-        (*left).add(nval);
+        (*left).add(nval,nloc);
       }
       else{
-        left = new Node(nval);
+        left = new Node(nval,nloc);
       }
     }
   }
@@ -162,7 +167,7 @@ struct Node{
         topScores ~= i;
       }
     }
-    topScores ~= val;
+    topScores ~= loc;
     if(right){
       (*right).updateTopScores();
       foreach(i;(*right).topScores){
@@ -172,6 +177,7 @@ struct Node{
   }
 
   Node* pruneLast(){
+    size--;
     if(right){
       right = (*right).pruneLast();
       return &this;
@@ -201,30 +207,42 @@ void readAllowedFiles(ref bool[string] nolook) {
 }
 
 
-
 int main(){
   writeln("Number of cols : ",getCols());
   clean();
-  string[5] arr = [
-    "This",
-    "That",
-    "Then",
-    "Them",
-    "Then"
-  ];
-  auto files = dirEntries("/home/somi",SpanMode.shallow,false);
-  printLines(arr,0);
-  writeln(files);
   readAllowedFiles(nolook);
-  writeln(nolook.length);
-  auto sp = Spider("/home/somi/programs");
-  Node root = Node(0);
-  foreach(i;1..100){
-    root.add(i);
+  auto sp = Spider("/home");
+  FileInfo[] allFiles;
+
+  auto sw = StopWatch(AutoStart.no);
+
+
+  sw.start();
+  foreach(x;(sp))
+    allFiles ~= x;
+
+  Duration readtime = sw.peek();
+  string toFind = "trash";
+  foreach(ref x;(allFiles))
+    x.score = score(toFind, x.name);
+
+  Duration scoretime = sw.peek();
+
+  Node root = Node(-1, "");
+  foreach(x;allFiles){
+    root.add(x.score, x.dirInfo.name);
+    if(root.size > OPTIONS)
+      root.pruneLast();
   }
-  root.pruneLast();
   root.updateTopScores();
+  Duration sorttime = sw.peek();
+  sw.stop();
   writeln(root.topScores);
+  writeln("Total time :",sw.peek());
+  writeln("Reading time :",readtime);
+  writeln("Scoring time :",scoretime-readtime);
+  writeln("Sorting time :",sorttime-scoretime);
+
 
   return 0;
 
