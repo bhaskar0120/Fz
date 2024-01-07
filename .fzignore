@@ -1,5 +1,5 @@
-!nvim
-!node_modules
-!.git
-programs
+node_modules
+util
+.git
+
 

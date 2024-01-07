@@ -1,49 +1,97 @@
 import std.stdio:writeln, writef, File;
 import std.string:leftJustify, splitLines;
-import std.file:dirEntries, SpanMode, read;
+import std.file:dirEntries, SpanMode, read, DirEntry;
+import std.array: split;
+import core.stdc.stdlib:exit;
+import std.algorithm: min;
 
-float score(size_t node, const string src, const string dest){
-  // weighted edit distance
-  return 0.0;
+const int MAX = 50;
+long score(const string src, const string dest){
+  long[] mem = new long[MAX*MAX];
+  bool[] vis = new bool[MAX*MAX];
+
+  long editDist(long idx1, long idx2){
+    if(idx1 < 0) return idx2+1;
+    if(idx2 < 0) return idx1+1;
+    if(vis[idx1*MAX+idx2]) return mem[idx1*MAX+idx2];
+    // weighted edit distance
+    vis[idx1*MAX+idx2] = true;
+    return mem[idx1*MAX+idx2] = min(
+      editDist(idx1-1,idx2-1)+ cast(long)(src[idx1] != dest[idx2]),
+      editDist(idx1-1,idx2) + 1,
+      editDist(idx1,idx2-1) + 1,
+      );
+  }
+  return editDist(src.length-1,dest.length-1);
 }
 
 enum Type{
-  ALL, SPECIFIC, SKIPPABLE, BOTH
+  ALL, SKIPPABLE
 }
 
-bool[string] look,nolook;
+struct FileInfo{
+  DirEntry dirInfo;
+  string name;
+}
+
+bool[string] nolook;
 struct Spider{
   string currDir;
-  string[] list;
+  FileInfo[] list;
   size_t pos = 0;
   Type type;
 
+  void add(){
+    switch(type){
+      case Type.ALL:
+        foreach(file ; dirEntries(currDir,SpanMode.shallow,false)){
+          auto temp = cast(string)(file.name.split('/')[$-1]);
+          FileInfo Struct = {dirInfo : file, name : temp};
+          list ~= Struct;
+        }
+        break;
+      case Type.SKIPPABLE:
+        foreach(file ; dirEntries(currDir,SpanMode.shallow,false)){
+          auto temp = cast(string)(file.name.split('/')[$-1]);
+          writeln(temp);
+          if(!(temp in nolook))
+          {
+            FileInfo Struct = {dirInfo : file, name : temp};
+            list ~= Struct;
+          }
+        }
+        break;
+      default:
+        writeln("BROKEN");
+        exit(1);
+    }
+  }
+        
+
   this(string DIR){
     currDir = DIR;
-    if(look.length >= 0 && nolook.length >= 0)
-      type = Type.BOTH;
-    else if(look.length >= 0)
-      type = Type.SPECIFIC;
-    else if (nolook.length)
+    if(nolook.length)
       type = Type.SKIPPABLE;
     else
       type = Type.ALL;
+    add();
 
-
-    foreach(file ;dirEntries(currDir, SpanMode.shallow, false)){
-      list ~= file;
-    }
-    writeln(list);
+    foreach(x;this.list)
+      writeln(x);
   }
 
   bool empty(){
-
-    return false;
+    return pos >= list.length;
   }
   string front(){
-    return "";
+    return list[pos].name;
   }
-  void popfront(){
+  void popFront(){
+    if(list[pos].dirInfo.isDir){
+      currDir = list[pos].dirInfo.name;
+      add();
+    }
+    pos++;
   }
 }
 
@@ -77,18 +125,17 @@ void printLines(const string[] options, size_t highlight){
 
 // TUI ENDS
 
+// BST BEGINS
 
-void readAllowedFiles(ref bool[string] look,ref bool[string] nolook) {
+// BST ENDS
+
+
+
+void readAllowedFiles(ref bool[string] nolook) {
   auto lines = (cast(string)read(".fzignore")).splitLines();
   foreach(line;lines){
     if(line.length == 0) continue;
-    if(line[0] == '!'){
-      auto temp = cast(string)line[1..$];
-      look[temp] = true;
-    }
-    else{
-      nolook[line] = true;
-    }
+    nolook[line] = true;
   }
 
 }
@@ -108,10 +155,12 @@ int main(){
   auto files = dirEntries("/home/somi",SpanMode.shallow,false);
   printLines(arr,0);
   writeln(files);
-  readAllowedFiles(look,nolook);
-  writeln(nolook.length,look.length);
-  auto sp = Spider("/home/somi");
-
+  readAllowedFiles(nolook);
+  writeln(nolook.length);
+  auto sp = Spider("/home/somi/programs");
+  auto a = "Floccinaucinihilipilification";
+  auto b = "Antidisestablishmentarianism";
+  writeln(score(a,b));
   return 0;
 
 }
