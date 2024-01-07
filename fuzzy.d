@@ -8,7 +8,7 @@ import std.parallelism:parallel;
 import std.concurrency:spawn;
 import core.sys.posix.termios;
 
-const int MAXCHAR = 30;
+const int MAXCHAR = 50;
 long score(const string src, const string dest){
   long[MAXCHAR*MAXCHAR] mem;
   bool[MAXCHAR*MAXCHAR] vis;
@@ -20,13 +20,12 @@ long score(const string src, const string dest){
     // weighted edit distance
     vis[idx1*MAXCHAR+idx2] = true;
     return mem[idx1*MAXCHAR+idx2] = min(
-      editDist(idx1-1,idx2-1)+ cast(long)(src[idx1] != dest[idx2]),
+      editDist(idx1-1,idx2-1)+ 2*(src[idx1] != dest[idx2]) - (src[idx1] == dest[idx2]),
       editDist(idx1-1,idx2) + 1,
       editDist(idx1,idx2-1) + 1,
       );
   }
-  long length = min(src.length-1,dest.length-1);
-  return editDist(length,length); // just long enough to match the source
+  return editDist(src.length-1,min(src.length,dest.length)-1); 
 }
 
 const int MAXFILES = 65535;
@@ -220,8 +219,9 @@ void readAllowedFiles(ref bool[string] nolook) {
 
 shared string[OPTIONS] results;
 
-shared string toFind = "hello";
-shared bool change = false;
+shared string toFind;
+shared bool change = true;
+shared int highlight = 0;
 
 shared FileInfo[] sharedAllFiles;
 void find(){
@@ -239,10 +239,21 @@ void find(){
     foreach(i,r;root.topScores[1..$]){
       results[i] = r;
     }
-    change = false;
+    renderChange = true;
+    change=false;
   }
   return;
 }
+
+shared renderChange = true;
+void render(){
+  while(true){
+    while(!renderChange){}
+    printLines(results,toFind,highlight);
+    renderChange = false;
+  }
+}
+
   
 
 int main(){
@@ -251,27 +262,12 @@ int main(){
   auto sp = Spider("/home");
   FileInfo[] allFiles;
 
-  /* sw.start(); */
   foreach(x;(sp))
     allFiles ~= x;
-  
   sharedAllFiles = new FileInfo[allFiles.length];
   foreach(x;0..allFiles.length)
     sharedAllFiles[x] = cast(shared(FileInfo))allFiles[x];
 
-
-  /* Duration readtime = sw.peek(); */
-  /* string toFind = "new-trash"; */
-
-  /* Duration scoretime = sw.peek(); */
-
-  /* Duration sorttime = sw.peek(); */
-  /* sw.stop(); */
-  /* writeln("Total time :",sw.peek()); */
-  /* writeln("Reading time :",readtime); */
-  /* writeln("Scoring time :",scoretime-readtime); */
-  /* writeln("Sorting time :",sorttime-scoretime); */
-  // Save current terminal settings
   termios term, oldTerm;
 
   tcgetattr(0, &term);
@@ -281,39 +277,44 @@ int main(){
   term.c_cc[VTIME] = 0;
   tcsetattr(0, TCSANOW, &term);
 
-  spawn(&find);
-  char[] keyboardInput;
-  int highlight = 0;
+  char[MAXCHAR] keyboardInput;
   int strLen = 0;
+  spawn(&find);
+  spawn(&render);
   toFind = "";
   while(true){
-    printLines(results, toFind,highlight);
     int c = getchar();
+    renderChange=true;
     if(c == 127){
       if(strLen > 0){
-        toFind = cast(string)keyboardInput;
-        change = true;
-        keyboardInput[strLen-1] = 0;
         strLen--;
+        keyboardInput[strLen] = 0;
+        toFind = cast(string)keyboardInput;
+        change=true;
       }
     }
     else if(c == 9){
-      highlight++;
-      highlight%=OPTIONS;
+      highlight=(highlight+1)%OPTIONS;
     }
     else if(c == 10){
       tcsetattr(0, TCSANOW, &oldTerm);
-      writeln("@:",results[highlight]);
+      File f = File("/tmp/chd","w");
+      auto checkIsDIR = DirEntry(results[highlight]);
+      if(checkIsDIR.isDir)
+        f.writef("%s",results[highlight]);
+      else
+        foreach(i;results[highlight]
+            .split('/')[1..$-1])
+          f.writef("/%s",i);
+      f.close();
       exit(0);
     }
     else{
       if(strLen < keyboardInput.length)
         keyboardInput[strLen] = cast(char)c;
-      else
-        keyboardInput ~= cast(char)c;
       strLen++;
       toFind = cast(string)keyboardInput;
-      change = true;
+      change=true;
     }
 
   }
