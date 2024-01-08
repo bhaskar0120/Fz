@@ -241,7 +241,6 @@ void find(){
 
   while(RUNNING){
     while(!change && RUNNING){}
-    highlight = 0;
     foreach(ref x;parallel(allFiles))
       x.score = score(toFind, x.name);
     Node root = Node(-1, "");
@@ -299,6 +298,7 @@ int main(){
         strLen--;
         keyboardInput[strLen] = 0;
         toFind = cast(string)keyboardInput;
+        highlight = 0;
         change=true;
       }
     }
@@ -322,6 +322,7 @@ int main(){
       if(strLen < keyboardInput.length)
         keyboardInput[strLen] = cast(char)c;
       strLen++;
+      highlight = 0;
       toFind = cast(string)keyboardInput;
       change=true;
     }
