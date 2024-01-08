@@ -7,6 +7,7 @@ import std.algorithm: min, max;
 import std.parallelism:parallel;
 import std.concurrency:spawn;
 import core.sys.posix.termios;
+import std.path: expandTilde,dirName;
 
 const int MAXCHAR = 50;
 long score(const string src, const string dest){
@@ -210,10 +211,13 @@ struct Node{
 
 void readAllowedFiles(ref bool[string] nolook) {
   string[] lines;
-  if(exists("~/.config/fz/.fzignore"))
-    lines = (cast(string)read("~/.config/fz/.fzignore")).splitLines();
-  else if(exists("~/.fzignore"))
-    lines = (cast(string)read("~/.fzignore")).splitLines();
+  auto config = expandTilde("~/.config/fz/.fzignore");
+  auto home = expandTilde("~/.fzignore");
+  if(exists(config))
+    lines = (cast(string)read(config)).splitLines();
+  else if(exists(home)){
+    lines = (cast(string)read(home)).splitLines();
+  }
   else return;
   foreach(line;lines){
     if(line.length == 0) continue;
@@ -308,9 +312,7 @@ int main(){
       if(checkIsDIR.isDir)
         f.writef("%s",results[highlight]);
       else
-        foreach(i;results[highlight]
-            .split('/')[1..$-1])
-          f.writef("/%s",i);
+        f.writef("%s",dirName(results[highlight]));
       f.close();
       exit(0);
     }
