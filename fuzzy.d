@@ -1,6 +1,6 @@
 import std.stdio:writeln, writef, File, getchar;
 import std.string:leftJustify, splitLines;
-import std.file:dirEntries, SpanMode, read, DirEntry;
+import std.file:dirEntries, SpanMode, read, DirEntry, exists;
 import std.array: split;
 import core.stdc.stdlib:exit;
 import std.algorithm: min, max;
@@ -209,7 +209,12 @@ struct Node{
 
 
 void readAllowedFiles(ref bool[string] nolook) {
-  auto lines = (cast(string)read(".fzignore")).splitLines();
+  string[] lines;
+  if(exists("~/.config/fz/.fzignore"))
+    lines = (cast(string)read("~/.config/fz/.fzignore")).splitLines();
+  else if(exists("~/.fzignore"))
+    lines = (cast(string)read("~/.fzignore")).splitLines();
+  else return;
   foreach(line;lines){
     if(line.length == 0) continue;
     nolook[line] = true;
