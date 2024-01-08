@@ -108,6 +108,10 @@ void clean(){
   for(size_t t = 0; t < OPTIONS;++t) writeln();
 }
 
+void end(){
+  writef("\x1b[%uF\x1b[0J",OPTIONS+1);
+}
+
 size_t getCols(){
   size_t cols;
   File f;
@@ -236,6 +240,7 @@ shared FileInfo[] sharedAllFiles;
 void find(){
   while(true){
     while(!change){}
+    highlight = 0;
     foreach(ref x;parallel(sharedAllFiles))
       x.score = score(toFind, x.name);
     Node root = Node(-1, "");
@@ -254,7 +259,7 @@ void find(){
   return;
 }
 
-shared renderChange = true;
+shared renderChange = false;
 void render(){
   while(true){
     while(!renderChange){}
@@ -287,13 +292,16 @@ int main(){
   tcsetattr(0, TCSANOW, &term);
 
   char[MAXCHAR] keyboardInput;
+  foreach(ref i; keyboardInput)
+    i = 0;
+
   int strLen = 0;
   spawn(&find);
   spawn(&render);
   toFind = "";
   while(true){
-    int c = getchar();
     renderChange=true;
+    int c = getchar();
     if(c == 127){
       if(strLen > 0){
         strLen--;
@@ -303,7 +311,7 @@ int main(){
       }
     }
     else if(c == 9){
-      highlight=(highlight+1)%OPTIONS;
+      highlight = (highlight+1)%OPTIONS;
     }
     else if(c == 10){
       tcsetattr(0, TCSANOW, &oldTerm);
@@ -313,6 +321,7 @@ int main(){
         f.writef("%s",results[highlight]);
       else
         f.writef("%s",dirName(results[highlight]));
+      end();
       f.close();
       exit(0);
     }
