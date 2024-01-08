@@ -105,7 +105,7 @@ struct Spider{
 const size_t OPTIONS = 5;
 
 void clean(){
-  for(size_t t = 0; t < OPTIONS;++t) writeln();
+  for(size_t t = 0; t < OPTIONS+1;++t) writeln();
 }
 
 void end(){
@@ -120,15 +120,11 @@ size_t getCols(){
   f.close();
   return cols;
 }
-
+size_t maxLen;
 void printLines(shared string[] options, const string header, size_t highlight){
   writef("\x1b[%uF\x1b[0J",OPTIONS+1);
   writeln(header);
   assert(options.length == OPTIONS);
-  size_t maxLen = 0;
-  foreach(x;options)
-    maxLen = max(maxLen, x.length);
-  maxLen = min(maxLen,getCols()-3);
   foreach(i,val;options){
     auto temp = min(val.length,maxLen);
     if(i != highlight)
@@ -211,8 +207,6 @@ struct Node{
 
 // BST ENDS
 
-
-
 void readAllowedFiles(ref bool[string] nolook) {
   string[] lines;
   auto config = expandTilde("~/.config/fz/.fzignore");
@@ -235,16 +229,23 @@ shared string[OPTIONS] results;
 shared string toFind;
 shared bool change = true;
 shared int highlight = 0;
+shared RUNNING = true;
 
-shared FileInfo[] sharedAllFiles;
 void find(){
-  while(true){
-    while(!change){}
+  readAllowedFiles(nolook);
+  auto sp = Spider("/home");
+  FileInfo[] allFiles;
+
+  foreach(x;(sp))
+    allFiles ~= x;
+
+  while(RUNNING){
+    while(!change && RUNNING){}
     highlight = 0;
-    foreach(ref x;parallel(sharedAllFiles))
+    foreach(ref x;parallel(allFiles))
       x.score = score(toFind, x.name);
     Node root = Node(-1, "");
-    foreach(x;sharedAllFiles){
+    foreach(x;allFiles){
       root.add(x.score, x.absoluteLoc);
       if(root.size > OPTIONS)
         root.pruneLast();
@@ -261,8 +262,9 @@ void find(){
 
 shared renderChange = false;
 void render(){
-  while(true){
-    while(!renderChange){}
+  maxLen = min(getCols()-3,60);
+  while(RUNNING){
+    while(!renderChange && RUNNING){}
     printLines(results,toFind,highlight);
     renderChange = false;
   }
@@ -271,16 +273,9 @@ void render(){
   
 
 int main(){
+  spawn(&find);
   clean();
-  readAllowedFiles(nolook);
-  auto sp = Spider("/home");
-  FileInfo[] allFiles;
-
-  foreach(x;(sp))
-    allFiles ~= x;
-  sharedAllFiles = new FileInfo[allFiles.length];
-  foreach(x;0..allFiles.length)
-    sharedAllFiles[x] = cast(shared(FileInfo))allFiles[x];
+  spawn(&render);
 
   termios term, oldTerm;
 
@@ -296,9 +291,6 @@ int main(){
     i = 0;
 
   int strLen = 0;
-  spawn(&find);
-  spawn(&render);
-  toFind = "";
   while(true){
     renderChange=true;
     int c = getchar();
@@ -315,6 +307,7 @@ int main(){
     }
     else if(c == 10){
       tcsetattr(0, TCSANOW, &oldTerm);
+      RUNNING = false;
       File f = File("/tmp/chd","w");
       auto checkIsDIR = DirEntry(results[highlight]);
       if(checkIsDIR.isDir)
@@ -323,7 +316,7 @@ int main(){
         f.writef("%s",dirName(results[highlight]));
       end();
       f.close();
-      exit(0);
+      return 0;
     }
     else{
       if(strLen < keyboardInput.length)
@@ -334,7 +327,6 @@ int main(){
     }
 
   }
-
 
   return 0;
 
